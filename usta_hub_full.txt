@@ -1,0 +1,83 @@
+=== Firestore Security Rules ===
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    match /workerProfiles/{wpId} {
+      allow read: if true;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
+      allow update, delete: if request.auth != null &&
+        (request.auth.uid == resource.data.userId ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+    }
+    match /jobs/{jobId} {
+      allow create: if request.auth != null && request.resource.data.customerId == request.auth.uid;
+      allow update: if request.auth != null && (
+        request.auth.uid == resource.data.customerId ||
+        request.auth.uid == resource.data.selectedWorkerId ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+      );
+      allow read: if true;
+    }
+    match /chats/{chatId} {
+      allow read, create: if request.auth != null && request.auth.uid in request.resource.data.participants;
+      match /messages/{msgId} {
+        allow create: if request.auth != null && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+        allow read: if request.auth != null && request.auth.uid in resource.data.participants;
+      }
+    }
+    match /priceAgreements/{paId} {
+      allow create, read, update: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/chats/$(request.resource.data.chatId)).data.participants;
+    }
+  }
+}
+
+=== Project Structure ===
+/app
+  /(auth)
+  /(customer)/jobs/new
+  /(customer)/jobs/[id]
+  /(worker)/dashboard
+  /(worker)/profile/edit
+  /chat/[chatId]
+/components
+  Chat
+  PriceAgreementPanel
+  WorkerCard
+  CategoryGrid
+/lib
+  firebase.ts
+  firestore.ts
+/hooks
+  useAuth
+  useRealtimeCollection
+/public
+/locales/en/common.json
+/locales/ar/common.json
+/styles/tailwind.css
+/functions
+  notifications.ts
+  onWorkerApproved.ts
+
+=== i18n Files ===
+/locales/en/common.json
+{ "job.create": "Create a job", "chat.priceAgreement": "Price Agreement" }
+
+/locales/ar/common.json
+{ "job.create": "إنشاء وظيفة", "chat.priceAgreement": "اتفاق السعر" }
+
+=== Frontend Price Proposal ===
+const paRef = await addDoc(collection(db, 'priceAgreements'), {
+  jobId, chatId, proposerId: uid, price: proposedPrice, currency: 'EGP',
+  proposerAccepted: true, counterpartyAccepted: false, createdAt: serverTimestamp()
+});
+await addDoc(collection(db, `chats/${chatId}/messages`), {
+  senderId: uid, text: `Proposed price: ${proposedPrice}`, system: true, createdAt: serverTimestamp()
+});
+
+=== Cloud Function: onPriceAgreementUpdate ===
+<function code as previously provided>
